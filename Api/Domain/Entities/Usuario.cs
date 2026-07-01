@@ -13,7 +13,8 @@ public class Usuario : Entity<Guid>
     // Constructor privado para requerimientos de ORM (Entity Framework Core)
     private Usuario() { }
 
-    public Usuario(Guid id, string nombre, string apellido, Email email) : base(id)
+    public Usuario(Guid id, string nombre, string apellido, Email email)
+        : base(id)
     {
         if (string.IsNullOrWhiteSpace(nombre))
             throw new ArgumentException("El nombre no puede estar vacío.", nameof(nombre));

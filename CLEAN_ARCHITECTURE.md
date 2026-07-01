@@ -33,49 +33,38 @@ Dentro del proyecto `Api`, organizaremos la estructura de la siguiente manera:
 ```text
 Api/
 ├── Domain/                           # Capa de Dominio (Modelos de negocio estables)
-│   ├── Common/                       # Clases base (Entity, ValueObject, AggregateRoot)
-│   ├── Entities/                     # Entidades del negocio (e.g., Product, Customer)
-│   ├── ValueObjects/                 # Objetos de Valor inmutables (e.g., Price, Address)
-│   ├── Exceptions/                   # Excepciones de negocio/dominio
-│   └── Repositories/                 # Contratos (Interfaces) de repositorios
+│   ├── Common/                       # Clases base (Entity)
+│   ├── Entities/                     # Entidades del negocio (e.g., Usuario)
+│   └── ValueObjects/                 # Objetos de Valor de Vogen (e.g., Email)
 │
-├── Application/                      # Capa de Aplicación (Reglas de negocio/Casos de uso)
-│   ├── Common/                       # Abstracciones globales y comportamientos (Behaviors)
-│   └── Features/                     # Características agrupadas verticalmente (Slices)
-│       └── Products/                 # Módulo de Productos
-│           ├── CreateProduct/        # Slice Vertical: Crear Producto
-│           │   ├── CreateProductCommand.cs
-│           │   ├── CreateProductCommandHandler.cs
-│           │   ├── CreateProductCommandValidator.cs
-│           │   └── ProductResponse.cs
-│           └── GetProduct/           # Slice Vertical: Obtener Producto por ID
-│               ├── GetProductQuery.cs
-│               ├── GetProductQueryHandler.cs
-│               └── ProductResponse.cs
+├── Application/                      # Capa de Aplicación (Casos de uso en Slices)
+│   ├── Common/                       # Utilidades globales (IEndpoint, EndpointExtensions, ValidationFilter)
+│   └── Features/                     # Rebanadas Verticales (Auto-contenidas en un solo archivo C#)
+│       └── Usuarios/                 # Módulo de Usuarios
+│           ├── CreateUsuario/
+│           │   └── CreateUsuario.cs  # Contiene Command, Validator, Handler y Endpoint
+│           └── GetUsuarios/
+│               └── GetUsuarios.cs    # Contiene Query, DTO Response, Handler y Endpoint
 │
-├── Infrastructure/                   # Capa de Infraestructura (Detalles tecnológicos)
-│   ├── Data/                         # Persistencia y base de datos
-│   │   ├── ApplicationDbContext.cs   # DbContext de EF Core
-│   │   ├── Configurations/           # Mapeos Fluent API de EF Core
-│   │   ├── Migrations/               # Migraciones de EF Core
-│   │   └── Repositories/             # Implementación de los repositorios
-│   ├── Services/                     # Implementación de servicios externos (Email, API clientes)
-│   └── Controllers/                  # Controladores de la API (Punto de entrada técnico)
-│       └── ProductsController.cs     # Controlador para despachar peticiones de Products
+├── Infrastructure/                   # Capa de Infraestructura (Detalles de persistencia y Aspire)
+│   └── Data/                         # Persistencia y base de datos
+│       ├── ApplicationDbContext.cs   # DbContext de EF Core
+│       └── DbSeeder.cs               # Generador de Semillas con Bogus
 │
-└── Program.cs                        # Registro de dependencias y pipeline HTTP
+└── Program.cs                        # Registro de dependencias de Aspire, MediatR y Minimal APIs
 ```
+
+
 
 ---
 
 ## 3. Ejemplo de Código Completo
 
-A continuación, se detalla un flujo completo para la entidad **Product** estructurado según esta arquitectura.
+A continuación, se detalla la implementación completa para el módulo de **Usuarios** estructurado según esta arquitectura.
 
 ### 3.1. Capa de Dominio
 
 #### Clase Base Entity (`Entity.cs`)
-Esta clase base proporciona la infraestructura reutilizable para la identidad y la igualdad de las entidades, evitando tener implementaciones redundantes.
 ```csharp
 namespace Api.Domain.Common;
 
@@ -127,120 +116,49 @@ public abstract class Entity<TId> where TId : notnull
 }
 ```
 
-#### Objeto de Valor (`Price.cs`)
-Representado con la librería Vogen. Es un struct inmutable autogenerado.
+#### Objeto de Valor con Vogen (`Email.cs`)
 ```csharp
 using Vogen;
 
 namespace Api.Domain.ValueObjects;
 
-[ValueObject<decimal>]
-public partial struct Price
+[ValueObject<string>]
+public partial struct Email
 {
-    private static Validation Validate(decimal value) =>
-        value < 0
-            ? Validation.Invalid("El precio no puede ser negativo.")
-            : Validation.Ok;
+    private static Validation Validate(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return Validation.Invalid("El correo electrónico no puede estar vacío.");
+        }
+
+        if (!value.Contains("@") || !value.Contains("."))
+        {
+            return Validation.Invalid("El correo electrónico no tiene un formato válido.");
+        }
+
+        return Validation.Ok;
+    }
 }
 ```
 
-#### Entidad (`Product.cs`)
-La entidad hereda de la clase base reutilizable `Entity<Guid>` y utiliza el objeto de valor de Vogen.
+#### Entidad (`Usuario.cs`)
 ```csharp
 using Api.Domain.Common;
 using Api.Domain.ValueObjects;
 
 namespace Api.Domain.Entities;
 
-public class Product : Entity<Guid>
+public class Usuario : Entity<Guid>
 {
-    public string Name { get; private set; } = null!;
-    public Price Price { get; private set; }
-    public DateTime CreatedAt { get; private set; }
-
-    // Constructor privado para EF Core
-    private Product() { }
-
-    public Product(Guid id, string name, Price price) : base(id)
-    {
-        if (string.IsNullOrWhiteSpace(name))
-            throw new ArgumentException("El nombre del producto no puede estar vacío.", nameof(name));
-
-        Name = name;
-        Price = price;
-        CreatedAt = DateTime.UtcNow;
-    }
-
-    // Regla de negocio expuesta a través de un método (comportamiento)
-    public void UpdatePrice(Price newPrice)
-    {
-        Price = newPrice;
-    }
-}
-```
-
-
-#### Interfaz de Repositorio (`IProductRepository.cs`)
-El contrato se define en el Dominio para que la Aplicación pueda consumirlo sin saber cómo se persiste (Inversión de Dependencias).
-```csharp
-using Api.Domain.Entities;
-
-namespace Api.Domain.Repositories;
-
-public interface IProductRepository
-{
-    Task<Product?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
-    Task AddAsync(Product product, CancellationToken cancellationToken = default);
-    Task SaveChangesAsync(CancellationToken cancellationToken = default);
-}
-```
-
-#### Objeto de Valor (`Email.cs`)
-El email encapsula las invariantes de validación del formato de correo electrónico y normaliza su valor.
-```csharp
-namespace Api.Domain.ValueObjects;
-
-public record Email
-{
-    public string Value { get; }
-
-    private Email(string value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-            throw new ArgumentException("El correo electrónico no puede estar vacío.", nameof(value));
-
-        if (!value.Contains("@") || !value.Contains("."))
-            throw new ArgumentException("El correo electrónico no tiene un formato válido.", nameof(value));
-
-        Value = value.ToLowerInvariant().Trim();
-    }
-
-    public static Email Create(string value)
-    {
-        return new Email(value);
-    }
-}
-```
-
-#### Entidad (`Usuario.cs`)
-La entidad de usuario representa la identidad y los datos de un usuario en el sistema.
-```csharp
-using Api.Domain.ValueObjects;
-
-namespace Api.Domain.Entities;
-
-public class Usuario
-{
-    public Guid Id { get; private set; }
     public string Nombre { get; private set; } = null!;
     public string Apellido { get; private set; } = null!;
-    public Email Email { get; private set; } = null!;
+    public Email Email { get; private set; }
     public DateTime CreadoEn { get; private set; }
 
-    // Constructor privado para requerimientos de ORM (Entity Framework Core)
     private Usuario() { }
 
-    public Usuario(Guid id, string nombre, string apellido, Email email)
+    public Usuario(Guid id, string nombre, string apellido, Email email) : base(id)
     {
         if (string.IsNullOrWhiteSpace(nombre))
             throw new ArgumentException("El nombre no puede estar vacío.", nameof(nombre));
@@ -248,16 +166,12 @@ public class Usuario
         if (string.IsNullOrWhiteSpace(apellido))
             throw new ArgumentException("El apellido no puede estar vacío.", nameof(apellido));
 
-        ArgumentNullException.ThrowIfNull(email);
-
-        Id = id;
         Nombre = nombre;
         Apellido = apellido;
         Email = email;
         CreadoEn = DateTime.UtcNow;
     }
 
-    // Comportamiento del dominio para actualizar los datos del usuario
     public void ActualizarDatos(string nombre, string apellido, Email email)
     {
         if (string.IsNullOrWhiteSpace(nombre))
@@ -266,8 +180,6 @@ public class Usuario
         if (string.IsNullOrWhiteSpace(apellido))
             throw new ArgumentException("El apellido no puede estar vacío.", nameof(apellido));
 
-        ArgumentNullException.ThrowIfNull(email);
-
         Nombre = nombre;
         Apellido = apellido;
         Email = email;
@@ -277,76 +189,170 @@ public class Usuario
 
 ---
 
+### 3.2. Capa de Aplicación (CQRS & Vertical Slice en un solo archivo)
 
-### 3.2. Capa de Aplicación (CQRS & Vertical Slice)
+Para evitar la dispersión de archivos y mantener la cohesión, el comando/query, el validador, el handler y el endpoint se ubican en el **mismo archivo de característica**.
 
-Cada caso de uso está auto-contenido dentro de su propia carpeta de característica (`Feature`). Se utiliza `MediatR` para desacoplar el controlador de la lógica de negocio.
-
-#### Comando (`CreateProductCommand.cs`)
-Define los datos necesarios para ejecutar la acción.
+#### Interfaz para Registro de Endpoints (`IEndpoint.cs`)
 ```csharp
-using MediatR;
+using Microsoft.AspNetCore.Routing;
 
-namespace Api.Application.Features.Products.CreateProduct;
+namespace Api.Application.Common;
 
-public record CreateProductCommand(string Name, decimal PriceValue, string Currency) : IRequest<Guid>;
+public interface IEndpoint
+{
+    void MapEndpoint(IEndpointRouteBuilder app);
+}
 ```
 
-#### Validador (`CreateProductCommandValidator.cs`)
-Utiliza `FluentValidation` para validar los parámetros de entrada antes de que lleguen al handler.
+#### Filtro de Validación Genérico (`ValidationFilter.cs`)
 ```csharp
 using FluentValidation;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 
-namespace Api.Application.Features.Products.CreateProduct;
+namespace Api.Application.Common;
 
-public class CreateProductCommandValidator : AbstractValidator<CreateProductCommand>
+public class ValidationFilter<T> : IEndpointFilter where T : class
 {
-    public CreateProductCommandValidator()
+    public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
     {
-        RuleFor(x => x.Name)
-            .NotEmpty().WithMessage("El nombre es requerido.")
-            .MaximumLength(100).WithMessage("El nombre no debe exceder 100 caracteres.");
+        var validator = context.HttpContext.RequestServices.GetService<IValidator<T>>();
+        
+        if (validator is not null)
+        {
+            var arg = context.Arguments.FirstOrDefault(x => x is T) as T;
+            if (arg is not null)
+            {
+                var validationResult = await validator.ValidateAsync(arg);
+                if (!validationResult.IsValid)
+                {
+                    return Results.ValidationProblem(validationResult.ToDictionary());
+                }
+            }
+        }
+        
+        return await next(context);
+    }
+}
 
-        RuleFor(x => x.PriceValue)
-            .GreaterThan(0).WithMessage("El precio debe ser mayor a cero.");
-
-        RuleFor(x => x.Currency)
-            .NotEmpty().WithMessage("La moneda es requerida.")
-            .Length(3).WithMessage("La moneda debe tener un formato ISO de 3 letras (e.g. USD).");
+public static class RouteHandlerBuilderExtensions
+{
+    public static RouteHandlerBuilder WithValidation<T>(this RouteHandlerBuilder builder) where T : class
+    {
+        return builder.AddEndpointFilter<ValidationFilter<T>>();
     }
 }
 ```
 
-#### Handler (`CreateProductCommandHandler.cs`)
-Contiene la orquestación del caso de uso. Recibe el comando, interactúa con el Dominio y persiste usando la interfaz del repositorio.
+#### Rebanada Vertical: Crear Usuario (`CreateUsuario.cs`)
 ```csharp
+using Api.Application.Common;
 using Api.Domain.Entities;
-using Api.Domain.Repositories;
 using Api.Domain.ValueObjects;
+using Api.Infrastructure.Data;
+using FluentValidation;
 using MediatR;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Routing;
 
-namespace Api.Application.Features.Products.CreateProduct;
+namespace Api.Application.Features.Usuarios.CreateUsuario;
 
-public class CreateProductCommandHandler(IProductRepository repository) 
-    : IRequestHandler<CreateProductCommand, Guid>
+public record CreateUsuarioCommand(string Nombre, string Apellido, string Email) : IRequest<Guid>;
+
+public class CreateUsuarioCommandValidator : AbstractValidator<CreateUsuarioCommand>
 {
-    private readonly IProductRepository _repository = repository;
-
-    public async Task<Guid> Handle(CreateProductCommand request, CancellationToken cancellationToken)
+    public CreateUsuarioCommandValidator()
     {
-        // 1. Crear objetos de valor y entidad
-        var price = Price.Create(request.PriceValue, request.Currency);
-        var product = new Product(Guid.NewGuid(), request.Name, price);
+        RuleFor(x => x.Nombre).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Apellido).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Email).NotEmpty().Must(email => email.Contains("@") && email.Contains("."));
+    }
+}
 
-        // 2. Ejecutar persistencia
-        await _repository.AddAsync(product, cancellationToken);
-        await _repository.SaveChangesAsync(cancellationToken);
+public class CreateUsuarioCommandHandler(ApplicationDbContext context) 
+    : IRequestHandler<CreateUsuarioCommand, Guid>
+{
+    public async Task<Guid> Handle(CreateUsuarioCommand request, CancellationToken cancellationToken)
+    {
+        var email = Email.From(request.Email);
+        var usuario = new Usuario(Guid.NewGuid(), request.Nombre, request.Apellido, email);
 
-        // 3. Retornar ID de la entidad creada
-        return product.Id;
+        await context.Usuarios.AddAsync(usuario, cancellationToken);
+        await context.SaveChangesAsync(cancellationToken);
+
+        return usuario.Id;
+    }
+}
+
+public class CreateUsuarioEndpoint : IEndpoint
+{
+    public void MapEndpoint(IEndpointRouteBuilder app)
+    {
+        app.MapPost("api/usuarios", async (CreateUsuarioCommand command, ISender sender, CancellationToken cancellationToken) =>
+        {
+            var id = await sender.Send(command, cancellationToken);
+            return Results.Created($"/api/usuarios/{id}", id);
+        })
+        .WithName("CreateUsuario")
+        .WithTags("Usuarios")
+        .WithValidation<CreateUsuarioCommand>()
+        .Produces<Guid>(StatusCodes.Status201Created)
+        .ProducesValidationProblem(StatusCodes.Status400BadRequest);
     }
 }
 ```
+
+#### Rebanada Vertical: Obtener Usuarios (`GetUsuarios.cs`)
+```csharp
+using Api.Application.Common;
+using Api.Infrastructure.Data;
+using MediatR;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Routing;
+using Microsoft.EntityFrameworkCore;
+
+namespace Api.Application.Features.Usuarios.GetUsuarios;
+
+public record UsuarioResponse(Guid Id, string Nombre, string Apellido, string Email, DateTime CreadoEn);
+
+public record GetUsuariosQuery : IRequest<List<UsuarioResponse>>;
+
+public class GetUsuariosQueryHandler(ApplicationDbContext context) 
+    : IRequestHandler<GetUsuariosQuery, List<UsuarioResponse>>
+{
+    public async Task<List<UsuarioResponse>> Handle(GetUsuariosQuery request, CancellationToken cancellationToken)
+    {
+        var usuarios = await context.Usuarios.ToListAsync(cancellationToken);
+        
+        return usuarios.Select(u => new UsuarioResponse(
+            u.Id,
+            u.Nombre,
+            u.Apellido,
+            u.Email.Value,
+            u.CreadoEn
+        )).ToList();
+    }
+}
+
+public class GetUsuariosEndpoint : IEndpoint
+{
+    public void MapEndpoint(IEndpointRouteBuilder app)
+    {
+        app.MapGet("api/usuarios", async (ISender sender, CancellationToken cancellationToken) =>
+        {
+            var result = await sender.Send(new GetUsuariosQuery(), cancellationToken);
+            return Results.Ok(result);
+        })
+        .WithName("GetUsuarios")
+        .WithTags("Usuarios")
+        .Produces<List<UsuarioResponse>>(StatusCodes.Status200OK);
+    }
+}
+```
+
 
 ---
 
@@ -355,6 +361,7 @@ public class CreateProductCommandHandler(IProductRepository repository)
 #### Base de Datos (`ApplicationDbContext.cs`)
 ```csharp
 using Api.Domain.Entities;
+using Api.Domain.ValueObjects;
 using Microsoft.EntityFrameworkCore;
 
 namespace Api.Infrastructure.Data;
@@ -363,122 +370,94 @@ public class ApplicationDbContext : DbContext
 {
     public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options) : base(options) { }
 
-    public DbSet<Product> Products => Set<Product>();
+    public DbSet<Usuario> Usuarios => Set<Usuario>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        // Configuraciones Fluent API
-        modelBuilder.Entity<Product>(builder =>
+        modelBuilder.Entity<Usuario>(builder =>
         {
-            builder.ToTable("Products");
-            builder.HasKey(p => p.Id);
-            builder.Property(p => p.Name).HasMaxLength(100).IsRequired();
+            builder.ToTable("Usuarios");
+            builder.HasKey(u => u.Id);
+            builder.Property(u => u.Nombre).HasMaxLength(100).IsRequired();
+            builder.Property(u => u.Apellido).HasMaxLength(100).IsRequired();
 
-            // Mapeo del Value Object 'Price' como columna de propiedad adosada (Owned Types)
-            builder.OwnsOne(p => p.Price, price =>
-            {
-                price.Property(p => p.Value).HasColumnName("Price").HasPrecision(18, 2).IsRequired();
-                price.Property(p => p.Currency).HasColumnName("Currency").HasMaxLength(3).IsRequired();
-            });
+            // Configurar conversión para el value object de Vogen
+            builder.Property(u => u.Email)
+                .HasConversion(
+                    email => email.Value,
+                    value => Email.From(value))
+                .HasColumnName("Email")
+                .HasMaxLength(255)
+                .IsRequired();
         });
     }
 }
 ```
 
-#### Repositorio (`ProductRepository.cs`)
-Implementación concreta de la base de datos que se ubica en Infraestructura.
+#### Semillas con Bogus (`DbSeeder.cs`)
 ```csharp
 using Api.Domain.Entities;
-using Api.Domain.Repositories;
-using Api.Infrastructure.Data;
-using Microsoft.EntityFrameworkCore;
+using Api.Domain.ValueObjects;
+using Bogus;
 
-namespace Api.Infrastructure.Data.Repositories;
+namespace Api.Infrastructure.Data;
 
-public class ProductRepository(ApplicationDbContext dbContext) : IProductRepository
+public static class DbSeeder
 {
-    private readonly ApplicationDbContext _dbContext = dbContext;
-
-    public async Task<Product?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
+    public static void Seed(ApplicationDbContext context)
     {
-        return await _dbContext.Products
-            .FirstOrDefaultAsync(p => p.Id == id, cancellationToken);
-    }
+        context.Database.EnsureCreated();
 
-    public async Task AddAsync(Product product, CancellationToken cancellationToken = default)
-    {
-        await _dbContext.Products.AddAsync(product, cancellationToken);
-    }
+        if (context.Usuarios.Any()) return;
 
-    public async Task SaveChangesAsync(CancellationToken cancellationToken = default)
-    {
-        await _dbContext.SaveChangesAsync(cancellationToken);
-    }
-}
-```
+        var faker = new Faker<Usuario>()
+            .CustomInstantiator(f =>
+            {
+                var nombre = f.Name.FirstName();
+                var apellido = f.Name.LastName();
+                var email = Email.From(f.Internet.Email(nombre, apellido));
+                return new Usuario(Guid.NewGuid(), nombre, apellido, email);
+            });
 
-#### Controlador API (`ProductsController.cs`)
-Actúa puramente como despachador HTTP. Recibe peticiones HTTP, delega a `MediatR` y retorna el código de estado correspondiente.
-```csharp
-using Api.Application.Features.Products.CreateProduct;
-using MediatR;
-using Microsoft.AspNetCore.Mvc;
-
-namespace Api.Infrastructure.Controllers;
-
-[ApiController]
-[Route("api/[controller]")]
-public class ProductsController(ISender sender) : ControllerBase
-{
-    private readonly ISender _sender = sender;
-
-    [HttpPost]
-    [ProducesResponseType(StatusCodes.Status201Created)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    public async Task<IActionResult> Create([FromBody] CreateProductCommand command, CancellationToken cancellationToken)
-    {
-        var productId = await _sender.Send(command, cancellationToken);
-        return CreatedAtAction(nameof(Create), new { id = productId }, productId);
+        context.Usuarios.AddRange(faker.Generate(10));
+        context.SaveChanges();
     }
 }
 ```
 
 ---
 
+
 ## 4. Configuración en `Program.cs`
 
 Para que todo funcione coordinadamente con .NET Aspire 13+ y cargue las semillas con Bogus, el archivo `Program.cs` se configura de la siguiente forma:
 
 ```csharp
-using Api.Domain.Repositories;
+using Api.Application.Common;
 using Api.Infrastructure.Data;
-using Api.Infrastructure.Data.Repositories;
 using FluentValidation;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// 1. Agregar Controladores y OpenAPI
-builder.Services.AddControllers();
+// 1. Agregar OpenAPI y dependencias de endpoints automáticos (Minimal APIs)
 builder.Services.AddOpenApi();
+builder.Services.AddEndpoints();
 
 // 2. Configurar la persistencia de SQL Server con la integración nativa de .NET Aspire 13+
 builder.AddSqlServerDbContext<ApplicationDbContext>("bd");
 
-// 3. Registrar el repositorio de usuarios
-builder.Services.AddScoped<IUsuarioRepository, UsuarioRepository>();
-
-// 4. Registrar MediatR
+// 3. Registrar MediatR
 builder.Services.AddMediatR(cfg =>
 {
     cfg.RegisterServicesFromAssembly(typeof(Program).Assembly);
 });
 
-// 5. Registrar FluentValidation
+// 4. Registrar FluentValidation
 builder.Services.AddValidatorsFromAssembly(typeof(Program).Assembly);
 
 var app = builder.Build();
 
-// 6. Ejecutar base de datos y Seeds (Seeder con Bogus) en el inicio de la aplicación
+// 5. Ejecutar base de datos y Seeds (Seeder con Bogus) en el inicio de la aplicación
 using (var scope = app.Services.CreateScope())
 {
     var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -493,7 +472,9 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 app.UseAuthorization();
-app.MapControllers();
+
+// 6. Mapear automáticamente todas las Minimal APIs (Vertical Slices)
+app.MapEndpoints();
 
 app.Run();
 ```

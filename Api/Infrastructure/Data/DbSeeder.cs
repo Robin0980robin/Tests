@@ -16,19 +16,18 @@ public static class DbSeeder
         }
 
         // Configurar Bogus para instanciar la entidad Usuario con Email de Vogen
-        var faker = new Faker<Usuario>()
-            .CustomInstantiator(f =>
-            {
-                var id = Guid.NewGuid();
-                var nombre = f.Name.FirstName();
-                var apellido = f.Name.LastName();
-                
-                // Generar correo realista compatible con la regla del formato
-                var emailRaw = f.Internet.Email(nombre, apellido);
-                var email = Email.From(emailRaw);
+        var faker = new Faker<Usuario>().CustomInstantiator(f =>
+        {
+            var id = Guid.NewGuid();
+            var nombre = f.Name.FirstName();
+            var apellido = f.Name.LastName();
 
-                return new Usuario(id, nombre, apellido, email);
-            });
+            // Generar correo realista compatible con la regla del formato
+            var emailRaw = f.Internet.Email(nombre, apellido);
+            var email = Email.From(emailRaw);
+
+            return new Usuario(id, nombre, apellido, email);
+        });
 
         var usuariosFake = faker.Generate(10);
 

@@ -1,32 +1,28 @@
-using Api.Domain.Repositories;
+using Api.Application.Common;
 using Api.Infrastructure.Data;
-using Api.Infrastructure.Data.Repositories;
 using FluentValidation;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// 1. Agregar Controladores y OpenAPI
-builder.Services.AddControllers();
+// 1. Agregar OpenAPI y dependencias de endpoints automáticos (Minimal APIs)
 builder.Services.AddOpenApi();
+builder.Services.AddEndpoints();
 
 // 2. Configurar la persistencia de SQL Server con la integración nativa de .NET Aspire 13+
 builder.AddSqlServerDbContext<ApplicationDbContext>("bd");
 
-// 3. Registrar el repositorio de usuarios
-builder.Services.AddScoped<IUsuarioRepository, UsuarioRepository>();
-
-// 4. Registrar MediatR
+// 3. Registrar MediatR
 builder.Services.AddMediatR(cfg =>
 {
     cfg.RegisterServicesFromAssembly(typeof(Program).Assembly);
 });
 
-// 5. Registrar FluentValidation
+// 4. Registrar FluentValidation
 builder.Services.AddValidatorsFromAssembly(typeof(Program).Assembly);
 
 var app = builder.Build();
 
-// 6. Ejecutar base de datos y Seeds (Seeder con Bogus) en el inicio de la aplicación
+// 5. Ejecutar base de datos y Seeds (Seeder con Bogus) en el inicio de la aplicación
 using (var scope = app.Services.CreateScope())
 {
     var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -40,7 +36,8 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
-app.UseAuthorization();
-app.MapControllers();
+
+// 6. Mapear automáticamente todas las Minimal APIs (Vertical Slices)
+app.MapEndpoints();
 
 app.Run();
