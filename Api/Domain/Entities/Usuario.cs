@@ -9,6 +9,8 @@ public class Usuario : Entity<Guid>
     public string Apellido { get; private set; } = null!;
     public Email Email { get; private set; }
     public DateTime CreadoEn { get; private set; }
+    public bool EstaEliminado { get; private set; }
+    public DateTime? EliminadoEn { get; private set; }
 
     // Constructor privado para requerimientos de ORM (Entity Framework Core)
     private Usuario() { }
@@ -40,5 +42,11 @@ public class Usuario : Entity<Guid>
         Nombre = nombre;
         Apellido = apellido;
         Email = email;
+    }
+
+    public void Eliminar()
+    {
+        EstaEliminado = true;
+        EliminadoEn = DateTime.UtcNow;
     }
 }

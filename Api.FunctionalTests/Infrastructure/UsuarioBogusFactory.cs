@@ -1,4 +1,5 @@
 using Api.Application.Features.Usuarios.CreateUsuario;
+using Api.Application.Features.Usuarios.UpdateUsuario;
 using Api.Domain.Entities;
 using Api.Domain.ValueObjects;
 using Bogus;
@@ -26,6 +27,17 @@ public static class UsuarioBogusFactory
         var faker = new Faker("es");
 
         return new CreateUsuarioCommand(
+            faker.Name.FirstName(),
+            faker.Name.LastName(),
+            faker.Internet.Email()
+        );
+    }
+
+    public static UpdateUsuarioRequest CreateUpdateRequest()
+    {
+        var faker = new Faker("es");
+
+        return new UpdateUsuarioRequest(
             faker.Name.FirstName(),
             faker.Name.LastName(),
             faker.Internet.Email()

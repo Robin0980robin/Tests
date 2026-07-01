@@ -17,10 +17,15 @@ public class ApplicationDbContext : DbContext
         {
             builder.ToTable("Usuarios");
             builder.HasKey(u => u.Id);
+            builder.HasQueryFilter(u => !u.EstaEliminado);
 
             builder.Property(u => u.Nombre).HasMaxLength(100).IsRequired();
 
             builder.Property(u => u.Apellido).HasMaxLength(100).IsRequired();
+
+            builder.Property(u => u.EstaEliminado).IsRequired();
+
+            builder.Property(u => u.EliminadoEn);
 
             // Conversión de tipo para el objeto de valor de Vogen (Email)
             builder
