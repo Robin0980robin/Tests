@@ -444,7 +444,10 @@ builder.Services.AddOpenApi();
 builder.Services.AddEndpoints();
 
 // 2. Configurar la persistencia de SQL Server con la integración nativa de .NET Aspire 13+
-builder.AddSqlServerDbContext<ApplicationDbContext>("bd");
+if (!builder.Environment.IsEnvironment("Testing"))
+{
+    builder.AddSqlServerDbContext<ApplicationDbContext>("bd");
+}
 
 // 3. Registrar MediatR
 builder.Services.AddMediatR(cfg =>
@@ -458,8 +461,9 @@ builder.Services.AddValidatorsFromAssembly(typeof(Program).Assembly);
 var app = builder.Build();
 
 // 5. Ejecutar base de datos y Seeds (Seeder con Bogus) en el inicio de la aplicación
-using (var scope = app.Services.CreateScope())
+if (!app.Environment.IsEnvironment("Testing"))
 {
+    using var scope = app.Services.CreateScope();
     var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
     DbSeeder.Seed(context);
 }
@@ -479,9 +483,26 @@ app.MapEndpoints();
 app.Run();
 ```
 
-
 ---
 
+## 5. Pruebas Funcionales
+
+La suite funcional vive en `Api.FunctionalTests/` y separa claramente bootstrap, datos fake y casos reales:
+
+- `Infrastructure/SqliteTestDatabase.cs` recrea la base antes de cada test.
+- `Infrastructure/ApiWebApplicationFactory.cs` reemplaza el `DbContext` del API para que la app corra dentro del test host.
+- `Infrastructure/UsuarioBogusFactory.cs` centraliza los datos fake con `Bogus`.
+- `Queries/GetUsuariosTests.cs` agrupa los casos de lectura y paginación.
+- `Queries/GetUsuarioByIdTests.cs` valida la búsqueda puntual por id y sus edge cases.
+- `Commands/CreateUsuarioTests.cs` agrupa los casos de escritura y validación.
+- `Infrastructure/ApiFunctionalTestBase.cs` concentra el bootstrap compartido.
+
+Este enfoque valida el pipeline completo de cada feature: request HTTP, binding, validación, MediatR, persistencia y respuesta.
+
+Cuando el API arranca en `Testing`, `Program.cs` omite la configuración de SQL Server y el seeding de inicio. Eso permite que la suite de pruebas sustituya la persistencia sin interferir con la configuración de producción.
+
+
+---
 ## 5. Beneficios Clave de esta Estructura
 
 1. **Localidad del Cambio:** Si necesitas agregar un nuevo campo a la creación del producto, no tienes que navegar por 4 proyectos distintos. Abres la carpeta `Application/Features/Products/CreateProduct` y allí tienes el Comando, el Validador y el Handler juntos.

@@ -14,18 +14,19 @@ public class PaginatedList<T>(List<T> items, int count, int page, int pageSize)
     public bool HasNextPage => Page < TotalPages;
 
     public static async Task<PaginatedList<T>> CreateAsync<TSource>(
-        IQueryable<TSource> source, 
-        int page, 
-        int pageSize, 
+        IQueryable<TSource> source,
+        int page,
+        int pageSize,
         Func<TSource, T> mapper,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken
+    )
     {
         var count = await source.CountAsync(cancellationToken);
         var items = await source
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync(cancellationToken);
-            
+
         var mappedItems = items.Select(mapper).ToList();
         return new PaginatedList<T>(mappedItems, count, page, pageSize);
     }
