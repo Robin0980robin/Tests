@@ -1,6 +1,7 @@
 using Api.Application.Common;
 using Api.Infrastructure.Data;
 using FluentValidation;
+using MediatR;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -19,6 +20,8 @@ builder.Services.AddMediatR(cfg =>
 {
     cfg.RegisterServicesFromAssembly(typeof(Program).Assembly);
 });
+
+builder.Services.AddTransient(typeof(IPipelineBehavior<,>), typeof(RequestTimingBehavior<,>));
 
 // 4. Registrar FluentValidation
 builder.Services.AddValidatorsFromAssembly(typeof(Program).Assembly);
